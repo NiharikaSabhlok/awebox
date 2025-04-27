@@ -34,6 +34,7 @@ import os.path
 
 import awebox.tools.vector_operations as vect_op
 import awebox.viz.tools as tools
+import casadi as ca
 import casadi.tools as cas
 import numpy as np
 import awebox.tools.struct_operations as struct_op
@@ -166,7 +167,10 @@ def generate_optimal_model(trial, param_options = None, external_forces = False)
     u_reg = reg_costs_fun(var, refs, weights)[2]
     beta_reg = 0.0
     for kite in trial.model.architecture.kite_nodes:
-        beta_sq = trial.model.outputs(trial.model.outputs_fun(var, trial.model.parameters))['aerodynamics', 'beta{}'.format(kite)]**2
+        u_app = trial.model.outputs(trial.model.outputs_fun(var, trial.model.parameters))['aerodynamics','u_app{}'.format(kite)]  # Shape: (3,)
+        beta_est = ca.atan2(u_app[1], u_app[0])  # Y over X
+        beta_sq = beta_est**2
+        # beta_sq = trial.model.outputs(trial.model.outputs_fun(var, trial.model.parameters))['aerodynamics', 'beta{}'.format(kite)]**2
         beta_reg += trial.optimization.p_fix_num['cost', 'beta']*beta_sq / trial.options['nlp']['cost']['normalization']['beta']
     if not 'e' in trial.model.variables_dict['x'].keys():
         power = trial.model.integral_outputs_fun(var, trial.model.parameters)
