@@ -34,6 +34,7 @@ import os.path
 
 import awebox.tools.vector_operations as vect_op
 import awebox.viz.tools as tools
+import casadi as ca
 import casadi.tools as cas
 import numpy as np
 import awebox.tools.struct_operations as struct_op
