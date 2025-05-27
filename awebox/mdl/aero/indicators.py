@@ -44,7 +44,7 @@ import awebox.mdl.aero.kite_dir.tools as tools
 
 
 def get_force_vector(options, variables, wind, architecture, parameters, kite, outputs):
-    kite_dcm = three_dof_kite.get_kite_dcm(options, variables, wind, kite, architecture)
+    kite_dcm = three_dof_kite.get_kite_dcm(options, variables, wind, kite, architecture, parameters)
 
     vec_u = tools.get_local_air_velocity_in_earth_frame(options, variables, wind, kite, kite_dcm, architecture,
                                                         parameters, outputs)
@@ -347,7 +347,7 @@ def collect_aero_validity_outputs(options, base_aerodynamic_quantities, outputs,
         dq = variables['x']['dq' + str(kite) + str(kite-1)]  
         q = variables['x']['q' + str(kite) + str(kite-1)] 
         wind_velocity = wind.get_velocity(q[2])
-        alpha = three_dof_kite.get_alpha_LEI(vec_u, kite_dcm, coeff, parameters, dq, wind_velocity)
+        alpha = three_dof_kite.get_alpha_LEI(vec_u, variables, parameters, coeff, architecture, kite)
         cl, cd = three_dof_kite.get_aerodynamic_coefficient(alpha)
         alpha_ub =  alpha - alpha_max
         alpha_lb = - alpha + alpha_min
