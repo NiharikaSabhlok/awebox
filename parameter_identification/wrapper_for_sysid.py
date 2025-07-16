@@ -9,42 +9,53 @@ import casadi as ca
 import numpy as np
 import json, os
 from typing import Optional
+import settings
+from settings import default_options
+
 
 # Load the kite geometry parameters dictionary
 data_dict = data_dict_func()
 
-# Define path to measurements dataset
-current_path = os.path.dirname(os.path.abspath(__file__))
-data_path = os.path.abspath(os.path.join(current_path, "..", "..", "Data", "DataShots"))
-json_file = os.path.join(data_path,  "one_loop_meas_2025_1.json")
-
-with open(json_file, "r") as f:
-    data = json.load(f)
-
-def setup_model():
+def setup_model(measurement_data: dict):
     """
-    Set up the model and options for the kitepower system.
+    Setup the kite model based on the provided measurement data (wind velocity in this case).
     """
-    upwind_velocity_without_outliers = remove_outliers(data['ground_wind_velocity'], 50, 2)
+
+
+
+    used_wind_velocity_data_key = default_options()['wind']['wind_vel']
+    upwind_velocity_without_outliers = remove_outliers(
+        measurement_data[used_wind_velocity_data_key], 10, 2
+    )
     upwind_velocity_filtered = interpolate_data(upwind_velocity_without_outliers)
-    upwind_velocity_mean = np.mean(upwind_velocity_filtered)
-    # Load the options
-    options_seed = {} 
-    options_seed['user_options.wind.u_ref'] = upwind_velocity_mean
+
+    # Define the model options for Lei kite model
+    options_seed = {}
+    #options_seed['user_options.wind.u_ref'] = np.mean(upwind_velocity_filtered)
     options_seed = ampyx_ap2_settings.set_kitepower_lei_settings(options_seed)
+
     options = opts.Options()
     options.fill_in_seed(options_seed)
 
-    # Create the model
-    model = mdl.Model()
+    # Set the kite architecture
+    model      = mdl.Model()
     architecture = archi.Architecture(options['user_options']['system_model']['architecture'])
     options.build(architecture)
     model.build(options['model'], architecture)
 
-    return model, options
-def generate_implicit_dae_F(np, params_dict):
+    print("----------------------------------------------------------------------------")
+    print('Wind model options:')
+    print("used measurement data for wind reference velocity:", used_wind_velocity_data_key )
+    print(f"Wind model: {options_seed['user_options.wind.model']}")
+    print(f"Wind reference height: {options_seed['params.wind.z_ref']} m")
+    print('surface roughness length of log-wind profile:', options_seed['params.wind.log_wind.z0_air'])
+    # print(f"Using wind reference velocity: {options_seed['user_options.wind.u_ref']} m/s") 
+    print("----------------------------------------------------------------------------") 
 
-    model, options = setup_model()
+    return model, options
+
+def generate_implicit_dae_F(model, options, np, params_dict):
+
 
     model_constraints_list = model.constraints_list
     mdl_vars = model.variables
@@ -64,6 +75,7 @@ def generate_implicit_dae_F(np, params_dict):
     u = ca.SX.sym('u', nu)
     z = ca.SX.sym('z', nz)
     p = ca.SX.sym('p', np)
+    u_ref = ca.SX.sym('u_ref', 1)
 
     # fill in AWEbox variables and parameters
     theta = model.variables_dict['theta'](1.0)
@@ -105,8 +117,10 @@ def generate_implicit_dae_F(np, params_dict):
     counter = 0
     for k in range(theta0.shape[0]):
         CanIdx = theta0.getCanonicalIndex(k)
-        print(CanIdx)
-        if len(CanIdx) == 2:
+        if CanIdx == ('wind', 'u_ref', 0):
+            theta0_list.append(u_ref)
+            print('u_ref symbolic parameter added!')
+        elif len(CanIdx) == 2:
             try:
                 test = params_dict[CanIdx[0]][CanIdx[1]]
                 theta0_list.append(p[counter])
@@ -150,7 +164,7 @@ def generate_implicit_dae_F(np, params_dict):
     mdl_eq_expr = mdl_eq_fun(F_vars, F_params)
 
     # make new function
-    F_dae = ca.Function('F_dae', [xdot, x, u, z, p], [mdl_eq_expr])
+    F_dae = ca.Function('F_dae', [xdot, x, u, z, p, u_ref], [mdl_eq_expr])
 
     return F_dae
 
@@ -166,7 +180,7 @@ def get_bounds():
             'u_s':  ca.DM([ -1. ]),
             'u_d':  ca.DM([ 0.0 ]),
             'l_t':  ca.DM([ 1.0e-2]),
-            'dl_t': ca.DM([ -5.0 ]),
+            'dl_t': ca.DM([ -30.0 ]),
         },
         'u': {
             'du_s': ca.DM([ -.8 ]),
@@ -192,7 +206,7 @@ def get_bounds():
             'dl_t': ca.DM([ 5.0]),
         },
         'u': {
-            'du_s': ca.DM([ .8 ]),
+            'du_s': ca.DM([ 1. ]),
             'du_d': ca.DM([ 0.1 ]),
             'ddlt': ca.DM([ 2. ]),
         },
@@ -220,19 +234,19 @@ def get_scaled_bounds(model):
             'u_s':  ca.DM([ -1.0 /model.scaling['x'][6]]),
             'u_d':  ca.DM([ 0.0 /model.scaling['x'][7]]),
             'l_t':  ca.DM([ 1.0e-2/	model.scaling['x'][8]]),
-            'dl_t': ca.DM([ -30.0 / model.scaling['x'][9]]),
+            'dl_t': ca.DM([ -10.0 / model.scaling['x'][9]]),
         },
         'u': {
-            'du_s': ca.DM([ -.08 / model.scaling['u'][3]]),
+            'du_s': ca.DM([ -1. / model.scaling['u'][3]]),
             'du_d': ca.DM([ -0.1 / model.scaling['u'][4]]),
-            'ddlt': ca.DM([ -2.0 / model.scaling['u'][5]]),
+            'ddlt': ca.DM([ -2. / model.scaling['u'][5]]),
         },
         'z': {
-            'lambda': ca.DM([ 1 /model.scaling['z'][0]]),
+            'lambda': ca.DM([ 1e-3 /model.scaling['z'][0]]),
         },  
         'p': {
             #'K_s_D': ca.DM([ 0.0 ]),
-            'c_s' : ca.DM([0.0]),
+            'c_s' : ca.DM([-np.deg2rad(60)/0.6]),
         }
     }
 
@@ -244,19 +258,19 @@ def get_scaled_bounds(model):
             'u_s':  ca.DM([ 1. / model.scaling['x'][6]]),    
             'u_d':  ca.DM([ 1. / model.scaling['x'][7]]),
             'l_t':  ca.DM([ 1.0e3 / model.scaling['x'][8]]), 
-            'dl_t': ca.DM([ 30.0 / model.scaling['x'][9]]),
+            'dl_t': ca.DM([ 10.0 / model.scaling['x'][9]]),
         },
         'u': {
-            'du_s': ca.DM([ .08 / model.scaling['u'][3]]),
+            'du_s': ca.DM([ 0.1 / model.scaling['u'][3]]),
             'du_d': ca.DM([ .1 / model.scaling['u'][4]]),
-            'ddlt': ca.DM([ 2.0 / model.scaling['u'][5]]),
+            'ddlt': ca.DM([ 2. / model.scaling['u'][5]]),
         },
         'z': {
             'lambda': ca.DM([ ca.inf /model.scaling['z'][0]]),
         },
         'p': {
-            #'K_s,D': ca.DM([ .81 ]),
-            'c_s' : ca.DM([10.1]),
+            #'K_s,D': ca.DM([ 1.0 ]),
+            'c_s' : ca.DM([np.deg2rad(60)/0.6]),
         }
     }
 
@@ -329,7 +343,9 @@ def flatten_group_bounds(lbs: dict, ubs: dict, group: str):
 
 if __name__ == '__main__':
 
-    model, options = setup_model()
+    # Define path to measurements dataset
+    data = settings.load_measurement_data(settings.MEAS_FILE)
+    model, options = setup_model(data)
 
     n_p = 0
     params_dict = {}
@@ -359,6 +375,6 @@ if __name__ == '__main__':
     print(lb_z_scaled, ub_z_scaled)
     
 
-    test = generate_implicit_dae_F(n_p, params_dict)
+    test = generate_implicit_dae_F(model, options, n_p, params_dict)
     print(test)
     print(params_dict)
