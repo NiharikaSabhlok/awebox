@@ -436,11 +436,11 @@ def get_V_theta(V, nlp_numerics_options, k):
     return theta
 
 
-def calculate_tf(params, V, k):
+def calculate_tf(params, V, k, single_reelout=False):
 
     nk = params['n_k']
 
-    if params['phase_fix'] == 'single_reelout':
+    if single_reelout:
         if k < round(nk * params['phase_fix_reelout']):
             tf = V['theta', 't_f', 0]
         else:
